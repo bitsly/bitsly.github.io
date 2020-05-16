@@ -1,0 +1,80 @@
+<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>搬砖手账 | XSS防御</title><link rel=icon type=image/x-icon><link rel=stylesheet href=https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css><link rel=stylesheet href=https://cdn.jsdelivr.net/npm/normalize.css@8.0.1/normalize.min.css><link rel=stylesheet href="/static/style.min.css?v=14b5a9" integrity media=screen><script type=text/javascript src="/static/script.min.js?v=433992" integrity></script><script></script></head><body><header class="lay-header box-header"></header><div class=lay-wrapper><aside class="lay-aside box-aside"><div class=box-shadow-without-top><div class=box-logo><a href=/>搬砖手账</a><p>老韭菜的自我修养</p><div class=box-menu-toggle id=id-menu-toggle><button>
+<span></span><span></span><span></span></button></div></div><nav class="box-nav bg-white box-nav-min-hiden" id=id-menu><div><a href=/><i class="fa fa-fw fa-home fa-home"></i>Home</a></div><div><a href=/about><i class="fa fa-fw fa-home fa-user-md"></i>About</a></div><div class=box-nav-active><a href=/posts><i class="fa fa-fw fa-home fa-archive"></i>Archives</a></div><div><a href=/tags><i class="fa fa-fw fa-home fa-tag"></i>Tags</a></div></nav></div><div class="box-ref box-shadow bg-white" id=id-fix><div class=box-toc><nav id=TableOfContents><ul><li><a href=#本质>本质</a></li><li><a href=#分类>分类</a></li><li><a href=#解决思路>解决思路</a></li><li><a href=#输入校验>输入校验</a></li><li><a href=#输出转义>输出转义</a></li><li><a href=#浏览器安全>浏览器安全</a></li></ul></nav></div><div class=box-backtop id=id-backtop><i class="fa fa-arrow-up"></i><span></span></div></div></aside><main class="lay-main box-main"><div class="box-main-min bg-white box-main-padding box-shadow-without-top box-post"><article><div class=box-post-title>XSS防御</div><div class=box-post-meta><i class="fa fa-fw fa-calendar-check-o"></i>2019/05/15
+<span>|</span>
+<i class="fa fa-fw fa-keyboard-o"></i>1375
+<span>|</span>
+<i class="fa fa-fw fa-tags"></i>xss</div><div class=typ-article><h2 id=本质>本质</h2><p>原因：本应作为显示的数据，却包含了Web代码</p><p>目的：窃取隐私信息、劫持用户会话</p><p>难点：攻击者有各种各样的神奇的，你完全想象不到的方式来绕过服务器端的过滤，最典型的就是对URL和参数进行各种的编码，比如escape, encodeURI, encodeURIComponent, 16进制，10进制，8进制，来绕过XSS过滤。</p><p>结论：充分而完全的过滤，实际上是无法实现的。但是我们可以通过各种方式组合从而增加攻击成本。</p><h2 id=分类>分类</h2><ul><li>反射型</li></ul><p>后端代码：</p><pre><code>&lt;?php  
+    name = _GET['name'];  
+    echo $name;  
+?&gt;  
+</code></pre><p>浏览器访问</p><pre><code>    http://localhost/user.php?name=&lt;script&gt;alert(&quot;0&quot;)&lt;/script&gt;
+</code></pre><p>本来页面上应该显示用户输入的名字，但是却弹出了警报框。如果传入的脚本是获取Cookie中的用户凭证，则用户的会话会被劫持。</p><p>其特点一般是在URL后面拼接脚本，然后欺骗受害者点击从而执行脚本，从而达到危害目的。</p><ul><li>持久型</li></ul><p>后端接收用户输入：</p><pre><code>&lt;?php  
+    name = _GET['name'];  
+    saveToDb(name); 
+?&gt;  
+</code></pre><p>黑客浏览器访问</p><pre><code>    http://localhost/user.php?name=&lt;script&gt;alert(&quot;0&quot;)&lt;/script&gt;
+</code></pre><p>后端输出用户输入：</p><pre><code>&lt;?php  
+    name = getFromDb();
+    echo $name;
+?&gt;  
+</code></pre><p>普通用户浏览器访问</p><pre><code>    http://localhost/user.php
+</code></pre><p>访问结果如反射型XSS相同。如果这个程序是个论坛，则所有访问该帖子的用户都会中招。</p><p>其特点是程序保存了黑客特意编写的脚本，然后受害者再访问可以读出该脚本的页面，从而达到危害目的</p><ul><li>DOM型</li></ul><p>特殊类型的反射型XSS。</p><p>其特点是客户端的脚本通过DOM动态地输出数据到页面而不是依赖于将数据提交给服务器端，从而达到危害目的</p><h2 id=解决思路>解决思路</h2><p>前后端都需要处理。前端主要是进行DOM型XSS的防范。后端则需要重点对反射型和存储型进行防范。每一种方案都只能解决一部分问题。防范XXS防范。同时使用才有更好的效果。</p><p>这里重点对以SpringBoot为例的后端进行说明。解决的步骤为：</p><ul><li>输入校验</li><li>输出转义</li><li>浏览器安全</li></ul><h2 id=输入校验>输入校验</h2><p>正常情况下，普通用户输入的字符串不会带有<code>&lt;script></code>这种形式的内容。对于存在这种形式的输入，可以进行认定为非法参数。</p><p>hibernate-validator类库包里面，自带@SafeHtml注解。该标签默认可以校验常见的容易引发XSS的HTML标签。如果有其他特殊需求还可以在注解上进行定制。(注意，要使用@SafeHtml注解，依赖中要检查是否有jsoup包)</p><p>同时建议限制该字符串字段的长度，因为要输入脚本的话，基本上都是比较长的一段。约定了长度的限制就是增加了XSS攻击的成本。</p><h2 id=输出转义>输出转义</h2><p>输入校验中漏掉的HTML标签，或者用户输入的URL中带<code>&</code>、<code>&lt;</code>、<code>></code>、<code>'</code>、<code>"</code>这些特殊字符的，我们可以将它进行HTML实体转换。这种情况下，浏览器就会认为这些都是数据，而不是代码。</p><p>我们可以使用Apache类库里面的<code>StringEscapeUtils.escapeHtml4(value)</code>方法进行转换。</p><p>我们也可以自定义一个JSON的解析器，JSON自动序列化时自动转换。如下所示。</p><pre><code>&lt;dependency&gt;
+    &lt;groupId&gt;org.apache.commons&lt;/groupId&gt;
+    &lt;artifactId&gt;commons-text&lt;/artifactId&gt;
+    &lt;version&gt;1.6&lt;/version&gt;
+&lt;/dependency&gt;
+
+@Data
+public class TestReq {
+    @SafeHtml //拦截带html标签
+    private String html;
+}
+
+
+@Configuration
+public class XssStringJsonSerializer extends JsonSerializer&lt;String&gt; {
+    /**
+     * 将要输出的json中所有string类型转义
+     */
+    @Bean
+    @Primary
+    public ObjectMapper xssObjectMapper(Jackson2ObjectMapperBuilder builder) {
+        //解析器
+        ObjectMapper objectMapper = builder.createXmlMapper(false).build();
+        //注册xss解析器
+        SimpleModule xssModule = new SimpleModule(&quot;XssStringJsonSerializer&quot;);
+        xssModule.addSerializer(new XssStringJsonSerializer());
+        objectMapper.registerModule(xssModule);
+        //返回
+        return objectMapper;
+    }
+    @Override
+    public Class&lt;String&gt; handledType() {
+        return String.class;
+    }
+    @Override
+    public void serialize(String value, JsonGenerator jsonGenerator,
+                          SerializerProvider serializerProvider) throws IOException {
+        if (StringUtils.isNoneBlank(value)) {
+            String encodedValue = StringEscapeUtils.escapeHtml4(value);
+            jsonGenerator.writeString(encodedValue);
+        }
+    }
+}
+</code></pre><h2 id=浏览器安全>浏览器安全</h2><p>现代浏览器，已经能够实现对一些安全问题的防范了，我们开启这些选项后，就可以保护使用安全的现代浏览器用户。</p><pre><code>@EnableWebSecurity15/05/2019 14:05
+@Configuration
+public class SecurityConfiguration extends WebSecurityConfigurerAdapter {
+
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http.requiresChannel().requiresSecure(); //只能后端操作cookie，且只能https下操作
+        http..headers().xssProtection().block(false); //使用X-XSS-Protection开启浏览器的XSS防范，防范形式是不阻塞仅消除
+    }
+}
+</code></pre></div></article><div class=box-license>本文档创作遵循
+<a target=_blank href=https://creativecommons.org/licenses/by-nc-nd/4.0/deed.zh>「署名-非商业性使用-禁止演绎 4.0 国际版 (CC BY-NC-ND 4.0)」</a></div><div class=box-article-nav><a href=/posts/how-to-settle-order-with-time-zone/><i class="fa fa-chevron-left"></i><span>如何结算指定时区的订单</span></a>
+<a href=/posts/mybatis-batch-update/><span>批量执行SQL-以MyBatis为例</span><i class="fa fa-chevron-right"></i></a></div></div></main></div><footer class="lay-footer box-footer"><span>Copyright
+&nbsp;&copy;
+&nbsp;2019-2020
+&nbsp;<a href=/>语诺</a>,
+&nbsp;All Rights Reserved.</span></footer></body></html>

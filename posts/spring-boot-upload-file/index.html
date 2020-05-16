@@ -1,0 +1,61 @@
+<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>搬砖手账 | Spring Boot上传文件</title><link rel=icon type=image/x-icon><link rel=stylesheet href=https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css><link rel=stylesheet href=https://cdn.jsdelivr.net/npm/normalize.css@8.0.1/normalize.min.css><link rel=stylesheet href="/static/style.min.css?v=14b5a9" integrity media=screen><script type=text/javascript src="/static/script.min.js?v=433992" integrity></script><script></script></head><body><header class="lay-header box-header"></header><div class=lay-wrapper><aside class="lay-aside box-aside"><div class=box-shadow-without-top><div class=box-logo><a href=/>搬砖手账</a><p>老韭菜的自我修养</p><div class=box-menu-toggle id=id-menu-toggle><button>
+<span></span><span></span><span></span></button></div></div><nav class="box-nav bg-white box-nav-min-hiden" id=id-menu><div><a href=/><i class="fa fa-fw fa-home fa-home"></i>Home</a></div><div><a href=/about><i class="fa fa-fw fa-home fa-user-md"></i>About</a></div><div class=box-nav-active><a href=/posts><i class="fa fa-fw fa-home fa-archive"></i>Archives</a></div><div><a href=/tags><i class="fa fa-fw fa-home fa-tag"></i>Tags</a></div></nav></div><div class="box-ref box-shadow bg-white" id=id-fix><div class=box-toc><nav id=TableOfContents><ul><li><a href=#spring-boot上传文件机制>Spring Boot上传文件机制</a></li><li><a href=#遇到的问题>遇到的问题</a></li><li><a href=#降级使用commonsmultipartfile>降级使用CommonsMultipartFile</a></li><li><a href=#使用反射获取>使用反射获取</a></li><li><a href=#总结>总结</a></li></ul></nav></div><div class=box-backtop id=id-backtop><i class="fa fa-arrow-up"></i><span></span></div></div></aside><main class="lay-main box-main"><div class="box-main-min bg-white box-main-padding box-shadow-without-top box-post"><article><div class=box-post-title>Spring Boot上传文件</div><div class=box-post-meta><i class="fa fa-fw fa-calendar-check-o"></i>2019/07/23
+<span>|</span>
+<i class="fa fa-fw fa-keyboard-o"></i>1040
+<span>|</span>
+<i class="fa fa-fw fa-tags"></i>java, springboot, upload</div><div class=typ-article><h2 id=spring-boot上传文件机制>Spring Boot上传文件机制</h2><p>参考文章 <a href=https://www.cnblogs.com/littleatp/p/9939705.html>补习系列(11)-springboot 文件上传原理</a></p><blockquote><p>Spring Boot 的文件上传是基于Servlet实现的。在Servlet2.5及早期版本之前，文件上传需要借助commons-fileupload组件实现。从Servlet3.0规范之后，提供了对文件上传的原生支持，简化了应用程序的实现。以Tomcat 为例，在文件上传之后通过将写入到临时文件，最终将文件实体传参到应用层。</p></blockquote><h2 id=遇到的问题>遇到的问题</h2><p>客户端上传到服务端的文件，服务端会转存到第三方存储服务上。Spring Boot封装的MultipartFile只提供了InputStream流模式。而常见第三方存储服务的SDK提供的API的参数是让传File。这样的话我们不得不先将流再转存一次成为文件。（这样增加了处理时间和硬件负担）</p><blockquote><p>容器会将客户端上传的文件先存储在一个临时目录，待本次任务处理完后容器会自动移除该临时文件。</p></blockquote><p>本身容器已经在本地有了上传文件的临时存储，只不过Spring Boot封装了一层，不让直接访问。我们可以做一些处理绕过这个限制。</p><h2 id=降级使用commonsmultipartfile>降级使用CommonsMultipartFile</h2><ol><li>增加依赖</li></ol><pre><code>&lt;dependency&gt;
+	&lt;groupId&gt;commons-fileupload&lt;/groupId&gt;
+	&lt;artifactId&gt;commons-fileupload&lt;/artifactId&gt;
+	&lt;version&gt;1.3.2&lt;/version&gt;
+&lt;/dependency&gt;
+</code></pre><ol start=2><li>排除默认自动配置</li></ol><pre><code>@SpringBootApplication(exclude = { MultipartAutoConfiguration.class})
+</code></pre><ol start=3><li>替换默认解析器</li></ol><pre><code>@Bean(name = &quot;multipartResolver&quot;)
+public CommonsMultipartResolver getCommonsMultipartResolver() {
+	CommonsMultipartResolver multipartResolver = new CommonsMultipartResolver();
+	multipartResolver.setMaxUploadSize(20971520);
+	multipartResolver.setMaxInMemorySize(1048576);
+	return multipartResolver;
+}
+</code></pre><p>因为排除了默认自动配置，所以配置文件中spring.http.multipart.*相关配置会失效，需要手动在此配置。</p><ol start=4><li>编写接口</li></ol><pre><code>@PostMapping(&quot;/upload&quot;)
+public Object up(@RequestParam CommonsMultipartFile file) {
+	String fileName = file.getOriginalFilename();
+	DiskFileItem dfi = (DiskFileItem)file.getFileItem();
+	File f = dfi.getStoreLocation();
+	//do other things use file
+	return &quot;success&quot;;
+}
+</code></pre><p>这样就拿到了Tomcat中临时存储在本地的用户的上传文件，后面就可以用来上传到第三方服务了。</p><h2 id=使用反射获取>使用反射获取</h2><p>不同容器有不同的封装方式，需要根据不同的容器使用反射获取我们需要的变量。可以根据自己所用的容器选用。</p><ol><li>使用Tomcat做容器时的反射获取方式</li></ol><pre><code>public static File getFileFromMultipartInTomcat(MultipartFile file) {
+	try {
+		Field filePart = file.getClass().getDeclaredField(&quot;part&quot;);
+		filePart.setAccessible(true);
+		ApplicationPart part = (ApplicationPart) filePart.get(file);
+		Field partFileitem = part.getClass().getDeclaredField(&quot;fileItem&quot;);
+		partFileitem.setAccessible(true);
+		DiskFileItem diskFileItem = (DiskFileItem) partFileitem.get(part);
+		Field diskFileItemTempFile = diskFileItem.getClass().getDeclaredField(&quot;tempFile&quot;);
+		diskFileItemTempFile.setAccessible(true);
+		return (File) diskFileItemTempFile.get(diskFileItem);
+	} catch (Exception e) {
+		return null;
+	}
+}
+</code></pre><ol start=2><li>使用Undertow做容器时的反射获取方式</li></ol><pre><code>public static File getFileFromMultipartInUndertow(MultipartFile file) {
+	try {
+		Field filePart = file.getClass().getDeclaredField(&quot;part&quot;);
+		filePart.setAccessible(true);
+		PartImpl part = (PartImpl) filePart.get(file);
+		Field partFormvalue = part.getClass().getDeclaredField(&quot;formValue&quot;);
+		partFormvalue.setAccessible(true);
+		FormData.FormValue formValue = (FormData.FormValue) partFormvalue.get(part);
+		return formValue.getFileItem().getFile().toFile();
+	}catch (Exception e) {
+		return null;
+	}
+}
+</code></pre><p>两种方法均返回了MultipartFile中封装的指向客户端上传的File对象，上层逻辑获取后可以上传到第三方服务商。</p><h2 id=总结>总结</h2><p>使用降级方式是网上最常见的教程。但是可以看到，这种方法需要引入三方包、声明解析器、排除自动配置、原生配置失效。增加了复杂度、破坏了Spring Boot的先进性。</p><p>而使用反射的方式虽然有一定的性能降低，但只根据容器的不同引入一个十几行的工具方法，其简洁程度远胜于降级方式。个人推荐使用反射方式。</p></div></article><div class=box-license>本文档创作遵循
+<a target=_blank href=https://creativecommons.org/licenses/by-nc-nd/4.0/deed.zh>「署名-非商业性使用-禁止演绎 4.0 国际版 (CC BY-NC-ND 4.0)」</a></div><div class=box-article-nav><a href=/posts/standard-notes/><i class="fa fa-chevron-left"></i><span>Standard Notes 个人云笔记</span></a>
+<a href=/posts/java8-multithreading-and-thread-pool/><span>Java8多线程与线程池</span><i class="fa fa-chevron-right"></i></a></div></div></main></div><footer class="lay-footer box-footer"><span>Copyright
+&nbsp;&copy;
+&nbsp;2019-2020
+&nbsp;<a href=/>语诺</a>,
+&nbsp;All Rights Reserved.</span></footer></body></html>

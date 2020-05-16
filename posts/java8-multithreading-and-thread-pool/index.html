@@ -1,0 +1,74 @@
+<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>搬砖手账 | Java8多线程与线程池</title><link rel=icon type=image/x-icon><link rel=stylesheet href=https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css><link rel=stylesheet href=https://cdn.jsdelivr.net/npm/normalize.css@8.0.1/normalize.min.css><link rel=stylesheet href="/static/style.min.css?v=14b5a9" integrity media=screen><script type=text/javascript src="/static/script.min.js?v=433992" integrity></script><script></script></head><body><header class="lay-header box-header"></header><div class=lay-wrapper><aside class="lay-aside box-aside"><div class=box-shadow-without-top><div class=box-logo><a href=/>搬砖手账</a><p>老韭菜的自我修养</p><div class=box-menu-toggle id=id-menu-toggle><button>
+<span></span><span></span><span></span></button></div></div><nav class="box-nav bg-white box-nav-min-hiden" id=id-menu><div><a href=/><i class="fa fa-fw fa-home fa-home"></i>Home</a></div><div><a href=/about><i class="fa fa-fw fa-home fa-user-md"></i>About</a></div><div class=box-nav-active><a href=/posts><i class="fa fa-fw fa-home fa-archive"></i>Archives</a></div><div><a href=/tags><i class="fa fa-fw fa-home fa-tag"></i>Tags</a></div></nav></div><div class="box-ref box-shadow bg-white" id=id-fix><div class=box-toc><nav id=TableOfContents><ul><li><a href=#java8下线程池示例>Java8下线程池示例</a></li><li><a href=#lambda让代码更简洁>lambda让代码更简洁</a></li><li><a href=#有返回值的线程>有返回值的线程</a></li><li><a href=#自定义线程池>自定义线程池</a></li><li><a href=#共享线程池>共享线程池</a></li><li><a href=#参考>参考</a></li></ul></nav></div><div class=box-backtop id=id-backtop><i class="fa fa-arrow-up"></i><span></span></div></div></aside><main class="lay-main box-main"><div class="box-main-min bg-white box-main-padding box-shadow-without-top box-post"><article><div class=box-post-title>Java8多线程与线程池</div><div class=box-post-meta><i class="fa fa-fw fa-calendar-check-o"></i>2019/07/01
+<span>|</span>
+<i class="fa fa-fw fa-keyboard-o"></i>1538
+<span>|</span>
+<i class="fa fa-fw fa-tags"></i>java, thread</div><div class=typ-article><p>使用Java开发Web项目，经常会遇到使用多线程的方式调用外部系统，本文简述多线程的使用方法。</p><h2 id=java8下线程池示例>Java8下线程池示例</h2><pre><code>public static void main(String[] args) {
+    //创建线程池
+    ExecutorService executorService = Executors.newFixedThreadPool(4);
+    
+    //创建线程并使用线程池执行
+    List&lt;Future&lt;Long&gt;&gt; futureList = new ArrayList&lt;&gt;();
+    for (int i = 0; i &lt; 10; i++) {
+        Future&lt;Long&gt; submitFuture = executorService.submit(() -&gt; {
+            return Thread.currentThread().getId();
+        });
+        futureList.add(submitFuture);
+    }
+    
+    //获取线程返回的数据
+    for (Future&lt;Long&gt; future : longList) {
+        try {
+            Long threadId = future.get();
+            System.out.println(threadId);
+        } catch {Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
+</code></pre><p>上述代码在java8平台下，使用了lambda表示创建线程并放入线程池执行。</p><p>这样可以简单的进行线程池执行多线程。但我们在业务上会遇到各种复杂的问题，我们必须要了解线程池、线程的主要原理及注意事项，才能更好的编写稳定可用的代码。</p><h2 id=lambda让代码更简洁>lambda让代码更简洁</h2><p>lambda是java8提供的新的编写代码的方式，可以让编写的代码更简洁。lambda的基本用法如下：</p><pre><code>(parameters)-&gt; {expression}
+</code></pre><p>圆括号里面的是参数，可以是0或多个。如果参数时0个的话，可以不使用圆括号。所有参数均不需要声明参数类型，编译器可以进行类型推断。</p><p>花括号里面的是表达式，如果只有一条表达式语句可以不使用花括号，同时编译器会自动返回计算值。如果有多条语句需要指明返回值。</p><p>不用lambda的时候如果要创建一个线程，最基本的方式要么是集成Thread类，要么是实现Runnable接口，要单独编写一个类，相当繁琐。当然也可以用匿名内部类进行简化，如下：</p><pre><code>public static void main(String[] args) {
+    //匿名内部类继承Thread类
+    new Thread() {
+        public void run() {
+            System.out.println(&quot;done&quot;);
+        }
+    }.start();
+
+    //匿名内部类实现Runnable接口
+    new Thread(new Runnable() {
+        public void run() {
+            System.out.println(&quot;done&quot;);
+        }
+    }).start();
+}
+</code></pre><p>而使用lambda可以更简洁的创建线程。</p><pre><code>public static void main(String[] args) {
+    new Thread(()-&gt; {System.out.println(&quot;done&quot;);}).start();
+}
+
+</code></pre><h2 id=有返回值的线程>有返回值的线程</h2><p>一般主线程启动子线程的情况下，主线程会等待子线程返回结果。如下所示，我们启动一下带有返回值的子线程，然后在主线程调用get方法获取返回值。</p><pre><code>public static void main(String[] args) { 
+    FutureTask&lt;Long&gt; future = new FutureTask(() -&gt; Thread.currentThread().getId());
+    new Thread(future).start();
+    try {
+        Thread.sleep(500);
+        System.out.println(future.get());
+    } catch (Exception e) {
+        e.printStackTrace();
+    }
+}  
+</code></pre><p>注意，主线程调用get方法时，如果子线程还没有处理完，则主线程会被阻塞住，直到子线程的get方法有返回值。</p><h2 id=自定义线程池>自定义线程池</h2><p>Executors类提供了创建固定大小的线程池、创建可缓存的线程池、创建单线程的线程池、创建周期性线程的线程池。其本质是提供了静态方法去创建ThreadPoolExecutor类。开发中强烈不建议使用使用Executors类去创建线程池。而是使用ThreadPoolExecutor类去自定义适合自己业务的线程池。</p><p>ThreadPoolExecutor类的构造方法如下：</p><pre><code>public ThreadPoolExecutor( 
+        int corePoolSize, 
+        int maximumPoolSize, 
+        long keepAliveTime, 
+        TimeUnit unit, 
+        BlockingQueue workQueue, 
+        RejectedExecutionHandler handler)
+</code></pre><ul><li>corePoolSize 核心线程数，默认情况下核心线程会一直存活。</li><li>maximumPoolSize 线程池所能容纳的最大线程数。超过这个数的线程将被阻塞。</li><li>keepAliveTime 非核心线程的闲置超时时间，超过这个时间就会被回收。</li><li>unit keepAliveTime 的单位。</li><li>workQueue 表示存放任务的队列。常用的有三种，SynchronousQueue、LinkedBlockingDeque、ArrayBlockingQueue。</li><li>handler 任务队列存满之后再添加新任务时的策略，常用四种，AbortPolicy、DiscardPolicy、DiscardOldestPolicy、CallerRunsPolicy</li></ul><h2 id=共享线程池>共享线程池</h2><p>在同一个jvm里面，应该创建几个大线程池共用，而不是每个业务都创建自己的线程池（因为物理机的线程处理有限，线程过多会有挤压等待线程切换消耗等问题）。一般是一个定时线程池、一个业务线程池、一个IO线程池（IO容易阻塞线程池，为了不影响非IO的线程，故将IO于非IO进行分离）</p><p>如果是CPU密集型应用，则线程池大小设置为N+1
+如果是IO密集型应用，则线程池大小设置为2N+1 （其中N为CPU核数）
+由此公式推出： 最佳线程数目 = ((线程等待时间+线程CPU时间) / 线程CPU时间) * CPU核数</p><h2 id=参考>参考</h2><p><a href=https://blog.csdn.net/jgteng/article/details/54411423>线程池的拒绝策略</a><br><a href=https://blog.csdn.net/qq_25806863/article/details/71126867>Java多线程-线程池ThreadPoolExecutor构造方法和规则</a><br><a href=http://wingjay.com/2017/04/09/Java%E9%87%8C%E5%A6%82%E4%BD%95%E5%AE%9E%E7%8E%B0%E7%BA%BF%E7%A8%8B%E9%97%B4%E9%80%9A%E4%BF%A1%EF%BC%9F/>Java 里如何实现线程间通信</a></p></div></article><div class=box-license>本文档创作遵循
+<a target=_blank href=https://creativecommons.org/licenses/by-nc-nd/4.0/deed.zh>「署名-非商业性使用-禁止演绎 4.0 国际版 (CC BY-NC-ND 4.0)」</a></div><div class=box-article-nav><a href=/posts/spring-boot-upload-file/><i class="fa fa-chevron-left"></i><span>Spring Boot上传文件</span></a>
+<a href=/posts/how-to-settle-order-with-time-zone/><span>如何结算指定时区的订单</span><i class="fa fa-chevron-right"></i></a></div></div></main></div><footer class="lay-footer box-footer"><span>Copyright
+&nbsp;&copy;
+&nbsp;2019-2020
+&nbsp;<a href=/>语诺</a>,
+&nbsp;All Rights Reserved.</span></footer></body></html>
